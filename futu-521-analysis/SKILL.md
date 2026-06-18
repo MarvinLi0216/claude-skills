@@ -1,20 +1,19 @@
 ---
 name: futu-521-analysis
 description: >-
-  5+2+1+1个股深度分析。输出完整研报：Executive Summary、行业、商业模式、管理层、
-  财务、同业对比、DCF估值目标价（含正常化FCF）、PE/PB估值目标价、投资逻辑、风险、
-  技术面（含量化回测）、未来重大事件。
+  6+2+1+1个股深度分析。输出完整研报：Executive Summary、行业、商业模式、管理层、
+  财务、估值、同业对比、投资逻辑、风险、技术面（含量化回测）、未来重大事件。
   触发词："分析"、"深度分析"、"研报"、"估值"、"目标价"、"怎么样"、"能不能买"、
-  "值不值得买"、"5+2"、"全面分析"。仅支持单只股票。
+  "值不值得买"、"6+2"、"全面分析"。仅支持单只股票。
 metadata:
-  version: 0.4.0
+  version: 0.6.0
   author: MarvinLi
 license: MIT
 ---
 
-# 5+2+1+1 个股深度分析
+# 6+2+1+1 个股深度分析
 
-系统性个股深度分析框架：5（行业+商业模式+管理层+财务+估值）+ 2（投资逻辑+风险）+ 1（未来事件）+ 1（技术面）。
+系统性个股深度分析框架：6（行业+商业模式+管理层+财务+估值+同业对比）+ 2（投资逻辑+风险）+ 1（未来事件）+ 1（技术面）。
 
 **输入：** 单只股票代码（如 US.AAPL, HK.00700, SH.600519）
 **输出：** 中文结构化深度分析报告，含具体估值目标价
@@ -87,14 +86,15 @@ license: MIT
 
 **输出格式：**
 ```
-# {公司名} ({代码}) — 5+2+1+1 深度分析报告
+# {公司名} ({代码}) — 6+2+1+1 深度分析报告
 
 ## Executive Summary
 
 | 项目 | 结论 |
 |------|------|
 | 综合评级 | {强烈推荐/推荐/中性/谨慎/回避} |
-| 综合目标价 | ${XXX.XX}（当前 ${XXX.XX}，空间 {+/-XX%}） |
+| 概率加权目标价 | ${XXX.XX}（当前 ${XXX.XX}，空间 {+/-XX%}） |
+| 估值区间 | 保守 ${XXX} / 常规 ${XXX} / 激进 ${XXX} |
 | 投资类型 | {高增长/稳定分红/周期反转/价值低估/投机} |
 | 核心逻辑（一句话）| {最核心的买入/回避理由} |
 | 主要风险（一句话）| {最大的单一风险} |
@@ -470,12 +470,27 @@ O-Score 核心因子:
 - 金融科技/互联网券商（如FUTU、TIGR）→ PE为主 + PB辅助（轻资产但有AUM）
 - 平台型公司（如美团、拼多多）→ PS + PE（如已盈利）
 
-PE估值:
-  增速隐含PE = min(EPS增速%, 40)  # PEG=1法则，封顶40x防失真
-  加权PE = 5年历史均值PE × 0.4 + 行业均值PE × 0.3 + 增速隐含PE × 0.3
-  合理PE = max(10, min(40, 加权PE))  # 下限10x（健康公司底线），上限40x
+PE估值（含动态PE上限）:
+
+  === 动态PE上限计算 ===
+  PE_cap = min(max(sector_floor, 3yr_NI_CAGR × sector_multiplier), historical_PE_7yr + 2σ, industry_ceiling)
+
+  行业分档参数:
+  | 行业分类 | PE底线(floor) | CAGR乘数 | PE天花板(ceiling) |
+  |----------|---------------|----------|-------------------|
+  | SaaS/软件 | 25x | 1.2 | 60x |
+  | 高增长金融科技 | 20x | 1.0 | 50x |
+  | 消费/平台 | 18x | 1.0 | 50x |
+  | 稳定科技 | 15x | 0.8 | 40x |
+  | 金融/工业 | 10x | 0.7 | 30x |
+  | 公用事业/REITs | 12x | 0.5 | 22x |
+
+  注: historical_PE 使用7-10年回溯期（覆盖完整周期），IPO不足7年的用全部可用数据
   注: 若EPS增速<5%，增速隐含PE权重降至0.15，行业均值PE权重升至0.45
-  PE_Target = EPS(TTM) × 合理PE
+
+  加权PE = 5年历史均值PE × 0.4 + 行业均值PE × 0.3 + (3yr_NI_CAGR × sector_multiplier) × 0.3
+  合理PE = max(sector_floor, min(PE_cap, 加权PE))
+  PE_Target = EPS × 合理PE  (EPS选取见下方"盈利基数分层")
 
 PB估值:
   合理PB = (5年历史均值PB + 行业均值PB) / 2
@@ -488,8 +503,96 @@ PS估值:
   PS_Target = 每股营收 × 合理PS
 ```
 
-**C. 综合目标价（扩展分类）：**
+**C. 盈利基数处理流水线（三版本估值核心）：**
+
 ```
+=== Step 1: 一次性收益过滤 → 输出 Cleaned NI ===
+
+目的: 排除非经常性损益对估值基数的污染
+
+过滤规则:
+- 计算 gap = |NI - Operating_Income| / |NI|
+- 若 gap > 20% 且 该差距较上年扩大 >15pp → 标记为含一次性项目
+- 标记后: Cleaned_NI = Operating_Income（用于所有下游计算）
+- 未标记: Cleaned_NI = NI（原值透传）
+- 金融类公司（银行/券商/保险）豁免此过滤（利息收入属于经营性质）
+- 输出标注: "⚠️ 已剔除非经常性损益 ${X}亿，使用经营利润作为估值基础"
+
+注: Cleaned_NI 作为后续所有步骤的输入，包括周期触发判断和盈利基数选取
+
+=== Step 2: 周期性评分触发（替代简单50%门槛）===
+
+使用评分制判断是否处于周期峰值:
+
+cyclicality_score = 0
+if Cleaned_NI_YoY_growth > 50%: score += 2
+if Cleaned_NI_YoY_growth > 30%: score += 1
+if net_profit_margin > 1σ above 5yr_avg: score += 2
+if net_profit_margin > 0.5σ above 5yr_avg: score += 1
+if revenue_growth < NI_growth × 0.5: score += 1  (利润率扩张驱动，非收入驱动)
+if industry_is_known_cyclical: score += 1  (券商/半导体/大宗/广告)
+
+触发阈值: score >= 3 → 触发周期性修正
+score = 2 → 部分修正（下方说明）
+
+=== Step 2b: 前瞻性覆盖规则（防止误判结构性增长）===
+
+即使触发周期修正，若满足以下条件则暂停正常化:
+- 分析师NTM净利共识 > 当前FY净利（即市场预期盈利继续上升）
+- 此时标注: "⚠️ 分析师前瞻预期高于当前峰值，暂停周期正常化，按常规流程估值"
+- 回退到非触发场景的盈利基数分层
+
+=== Step 3: 盈利基数选取 ===
+
+【情况A: 周期触发 (score >= 3) 且未被前瞻规则暂停】
+
+行业分档正常化系数:
+| 行业周期性 | 代表行业 | 正常化系数 |
+|-----------|----------|-----------|
+| 高周期 | 券商、大宗商品、半导体设备 | 60-65% of peak |
+| 中周期 | 消费可选、广告、金融科技 | 70-75% of peak |
+| 低周期 | SaaS、医疗、公用事业 | 80-85% of peak |
+
+三版本盈利基数:
+- 保守: 3年平均 Cleaned_NI
+- 常规: peak × 行业正常化系数
+- 激进: 最新FY Cleaned_NI（实际值）
+
+【情况B: 部分修正 (score = 2)】
+- 保守: min(latest_FY, TTM) Cleaned_NI
+- 常规: average(latest_FY, TTM) Cleaned_NI
+- 激进: max(latest_FY, TTM) × 1.1
+（介于完全触发和未触发之间的混合方案）
+
+【情况C: 未触发 (score <= 1)】
+
+盈利基数分层（加季节性守卫）:
+- 先计算季节性系数: CoV = 过去8个季度NI的变异系数
+- 若 CoV > 0.3（强季节性）: 不使用单季度年化，改用 max(FY, TTM)
+
+三版本盈利基数:
+- 保守: min(latest_FY, TTM) Cleaned_NI
+- 常规: latest_FY Cleaned_NI
+- 激进:
+  - CoV <= 0.3: annualized_latest_quarter × 4（但不超常规版×1.5）
+  - CoV > 0.3: max(latest_FY, TTM) Cleaned_NI
+
+硬性约束: 激进版盈利基数 ≤ 常规版 × 1.5（防止极端偏离）
+
+=== Step 4: 三版本增速与WACC假设 ===
+
+| 版本 | 概率权重 | DCF增速 | WACC | PE倍数 |
+|------|----------|---------|------|--------|
+| 保守 | 30% | consensus × 0.7 | base + 1.5% | 历史均值PE 或 行业下沿 |
+| 常规 | 50% | min(consensus, hist_CAGR, 30%) | base | 加权PE（上方公式） |
+| 激进 | 20% | consensus × 1.2 (不超30%) | base - 0.5% | 动态PE_cap |
+
+注: 概率权重为固定值（V1），未来版本可根据分析师分歧度/VIX动态调整
+
+=== Step 5: 三版本综合目标价 ===
+
+每个版本分别计算 DCF + 间接估值 + 分析师共识的加权值:
+
 根据标的类型加权:
 - 高成长股 (PE>25, 营收增速>25%): DCF×40% + PE×35% + 分析师共识×25%
 - 稳定成长股 (PE 15-25, 营收增速10-25%): DCF×45% + PE×35% + 分析师共识×20%
@@ -506,8 +609,22 @@ PS估值:
 - 覆盖分析师 = 0人: 不使用分析师共识，仅用DCF+间接估值（按原比例归一化）
 （覆盖人数从 get_research_analyst_consensus 返回数据中获取）
 
-综合目标价 = 加权计算
-上/下行空间 = (综合目标价 - 当前价) / 当前价 × 100%
+最终输出:
+- 保守目标价 = 保守版加权结果
+- 常规目标价 = 常规版加权结果
+- 激进目标价 = 激进版加权结果
+- 概率加权目标价 = 保守×30% + 常规×50% + 激进×20%
+
+价差约束: 若 激进/保守 > 2.5:1，标注"⚠️ 估值分歧度较大，建议重点参考常规版"
+
+=== Step 6: Sanity Check 层 ===
+
+最终输出前执行合理性校验:
+- 若 |概率加权目标价 - 当前价| / 当前价 > 40%
+  且 |概率加权目标价 - 分析师共识| / 分析师共识 > 30%
+  → 标注: "⚠️ 低置信度估值 — 模型输出与市场定价及分析师共识偏离较大，建议结合定性判断"
+- 若 DCF终值占总企业价值 > 65%
+  → 标注: "⚠️ DCF终值占比过高({X}%)，目标价对永续假设高度敏感"
 ```
 
 **输出格式：**
@@ -579,16 +696,44 @@ PS估值:
   ⭐ **间接估值目标价: $XXX.XX**
   (= {EPS/BPS/每股营收} × 合理{PE/PB/PS})
 
-### C. 综合估值
+### C. 三版本综合估值
 
-| 方法 | 目标价 | 权重 | 加权贡献 |
-|------|--------|------|----------|
-| DCF | $XXX | XX% | $XX |
-| {PE/PB/PS} | $XXX | XX% | $XX |
-| 分析师共识 | $XXX | XX% | $XX |
+▸ 盈利基数处理:
+  - 一次性过滤: {已剔除/未触发} {若剔除: "剔除非经常性损益$X亿"}
+  - 周期性评分: {X}分 → {触发/部分修正/未触发}
+  - 前瞻覆盖: {NTM共识 vs 峰值的关系，是否暂停正常化}
 
-⭐ **综合目标价: $XXX.XX**
-⭐ **当前价 $XXX → 上/下行空间: +/-XX%**
+▸ 三版本盈利基数:
+| 版本 | 盈利基数 | 来源 |
+|------|----------|------|
+| 保守 | $XX亿 | {3年均值/min(FY,TTM)/...} |
+| 常规 | $XX亿 | {峰值×系数/FY/avg(FY,TTM)} |
+| 激进 | $XX亿 | {实际FY/max(FY,TTM)/季度年化} |
+
+▸ 三版本估值结果:
+
+| 版本 | 概率 | DCF目标 | PE目标 | 综合目标价 | vs当前价 |
+|------|------|---------|--------|-----------|----------|
+| 保守 | 30% | $XXX | $XXX | **$XXX** | +/-XX% |
+| 常规 | 50% | $XXX | $XXX | **$XXX** | +/-XX% |
+| 激进 | 20% | $XXX | $XXX | **$XXX** | +/-XX% |
+
+⭐ **概率加权目标价: $XXX.XX**（当前 $XXX.XX，空间 +/-XX%）
+
+▸ 各版本核心假设:
+- 保守: {一句话说明假设场景}
+- 常规: {一句话说明假设场景}
+- 激进: {一句话说明假设场景}
+
+▸ Sanity Check:
+{若触发: ⚠️ 低置信度/终值占比过高/价差过大 等标注}
+{若未触发: ✅ 通过合理性校验}
+
+▸ 交叉验证:
+| 参考来源 | 价格 | 本报告偏差 |
+|----------|------|-----------|
+| 晨星公允价值 | $XXX | +/-XX% |
+| 分析师共识(n=X) | $XXX | +/-XX% |
 
 ▸ 晨星公允价值（如有）: $XXX — {与本报告目标价的偏离度}
 ▸ 数据来源: get_financials_statements, get_valuation_detail, get_valuation_plate_stock_list, get_research_analyst_consensus, get_research_morningstar_report
@@ -885,24 +1030,38 @@ def strategy_ma_volume(df, ma_period=20, vol_mult=1.5):
 
 # === 回测引擎 ===
 
-def backtest(df, signals, initial_capital=100000, commission=0.001, slippage=0.001):
+def backtest(df, signals, strategy_name, initial_capital=100000, commission=0.001, slippage=0.001):
     capital = initial_capital
     shares = 0
     trades = 0
     equity_curve = [initial_capital]
+    trades_detail = []  # 交易明细记录
     
     for action, idx in signals:
         price = df['close'].iloc[idx]
+        trade_date = df['time'].iloc[idx]
         if action == 'buy':
-            exec_price = price * (1 + slippage)  # 买入滑点上浮
+            exec_price = price * (1 + slippage)
             shares = int(capital * (1 - commission) / exec_price)
             capital -= shares * exec_price * (1 + commission)
             trades += 1
+            trades_detail.append({
+                'date': str(trade_date).split(' ')[0],
+                'action': '买入',
+                'price': round(exec_price, 2),
+                'reason': ''  # 由调用方填充
+            })
         elif action == 'sell' and shares > 0:
-            exec_price = price * (1 - slippage)  # 卖出滑点下浮
+            exec_price = price * (1 - slippage)
             capital += shares * exec_price * (1 - commission)
             shares = 0
             trades += 1
+            trades_detail.append({
+                'date': str(trade_date).split(' ')[0],
+                'action': '卖出',
+                'price': round(exec_price, 2),
+                'reason': ''
+            })
         current_value = capital + shares * df['close'].iloc[idx]
         equity_curve.append(current_value)
     
@@ -930,13 +1089,26 @@ def backtest(df, signals, initial_capital=100000, commission=0.001, slippage=0.0
     # 信号充分性标记
     sufficient = trades >= 6  # 至少3次完整买卖（6笔交易）
     
+    # 当前持仓状态
+    current_position = 'holding' if shares > 0 else 'empty'
+    last_buy_info = None
+    if current_position == 'holding':
+        # 找最后一次买入记录
+        for t in reversed(trades_detail):
+            if t['action'] == '买入':
+                last_buy_info = {'date': t['date'], 'price': t['price']}
+                break
+    
     return {
         'total_return': round(total_return, 2),
         'annual_return': round(annual_return, 2),
         'max_drawdown': round(max_drawdown, 2),
         'sharpe': round(sharpe, 2),
         'trades': trades,
-        'sufficient': sufficient
+        'sufficient': sufficient,
+        'trades_detail': trades_detail,
+        'current_position': current_position,
+        'last_buy_info': last_buy_info
     }
 
 # === 主流程 ===
@@ -986,20 +1158,42 @@ bnh_daily_returns = (df['close'] / df['close'].shift(1) - 1).dropna()
 bnh_annual_std = bnh_daily_returns.std() * np.sqrt(252)
 bnh_sharpe = (bnh_annual / 100 - 0.043) / bnh_annual_std if bnh_annual_std > 0 else 0
 
+# 策略信号依据描述（用于操作明细表的"信号依据"列）
+signal_reasons = {
+    '双均线交叉(MA20/60)': {'buy': 'MA20上穿MA60', 'sell': 'MA20下穿MA60'},
+    'MACD信号': {'buy': 'MACD金叉(DIF上穿DEA)', 'sell': 'MACD死叉(DIF下穿DEA)'},
+    '突破20日高点': {'buy': '突破20日最高价', 'sell': '跌破10日最低价'},
+    'RSI超买超卖': {'buy': 'RSI<30超卖', 'sell': 'RSI>70超买'},
+    '布林带': {'buy': '触及下轨', 'sell': '触及上轨'},
+    '均线+放量': {'buy': '放量站上MA20', 'sell': '跌破MA20'}
+}
+
 # 回测每个策略
 results = []
 for func, name in zip(selected, names):
     try:
         signals = func(df)
-        result = backtest(df, signals)
+        result = backtest(df, signals, name)
         result['name'] = name
+        # 填充每笔交易的信号依据
+        reasons = signal_reasons.get(name, {'buy': '买入信号', 'sell': '卖出信号'})
+        for t in result.get('trades_detail', []):
+            if t['action'] == '买入':
+                t['reason'] = reasons['buy']
+            else:
+                t['reason'] = reasons['sell']
         results.append(result)
     except Exception as e:
         results.append({'name': name, 'total_return': 0, 'annual_return': 0, 
-                       'max_drawdown': 0, 'sharpe': 0, 'trades': 0, 'error': str(e)})
+                       'max_drawdown': 0, 'sharpe': 0, 'trades': 0, 
+                       'trades_detail': [], 'current_position': 'empty',
+                       'error': str(e)})
 
 # 输出JSON结果
 output = {
+    'start_date': str(df['time'].iloc[0]).split(' ')[0],
+    'end_date': str(df['time'].iloc[-1]).split(' ')[0],
+    'trading_days': len(df),
     'atr_ratio': round(atr_ratio * 100, 2),
     'adx': round(adx, 1),
     'type': type_desc,
@@ -1018,7 +1212,7 @@ print(json.dumps(output, ensure_ascii=False))
 ```
 ## 九、技术面分析
 
-**补充技术面的理由:** 5+2方法解决"值不值得买"，技术面解决"何时买"和"怎么买"。
+**补充技术面的理由:** 6+2方法解决"值不值得买"，技术面解决"何时买"和"怎么买"。
 通过趋势判断避免逆势操作，支撑/阻力位辅助设定买入区间，量化回测验证策略有效性。
 
 ▸ 当前趋势: {上升趋势 📈 / 下降趋势 📉 / 盘整 ↔️}
@@ -1039,8 +1233,9 @@ print(json.dumps(output, ensure_ascii=False))
 
 ▸ 技术面综合判断: {看多/看空/中性} — {简述理由}
 
-### 量化策略回测（基于3年历史数据）
+### 量化策略回测
 
+▸ 回测区间: {start_date} ~ {end_date}（共{N}个交易日，约{N/252:.1f}年）
 ▸ 标的特征: 波动率(ATR/Price)={X.X}%, 趋势强度(ADX)={XX}
 ▸ 标的类型: {高波动趋势型/低波动震荡型/中等波动}
 ▸ 策略选择理由: {为什么选择这3个策略}
@@ -1055,11 +1250,27 @@ print(json.dumps(output, ensure_ascii=False))
 
 注: 有效性⚠️表示交易次数<6笔（不足3次完整买卖），统计意义不足，结论仅供参考。
 
+#### {策略1} 操作明细
+
+| # | 日期 | 操作 | 价格 | 信号依据 |
+|---|------|------|------|----------|
+| 1 | YYYY-MM-DD | 买入 | $XX.XX | {触发条件，如: MA20上穿MA60} |
+| 2 | YYYY-MM-DD | 卖出 | $XX.XX | {触发条件，如: MA20下穿MA60} |
+| ... | | | | |
+
+当前状态: {空仓 / 持仓中(自YYYY-MM-DD买入于$XX.XX)}
+
+#### {策略2} 操作明细
+（同上格式）
+
+#### {策略3} 操作明细
+（同上格式）
+
 ▸ 推荐策略: **{最佳策略名}**（仅从有效性✅的策略中选取）
   理由: {夏普比率最高/收益回撤比最优/...}
   操作建议: {当前信号状态，如"当前MA20即将上穿MA60，关注金叉信号"}
 
-▸ 回测局限性: 回测区间{起始日}~{结束日}，若该区间内为单边行情，策略表现可能不具普适性。
+▸ 回测局限性: 若回测区间内为单边行情，策略表现可能不具普适性。
 ▸ 数据来源: get_kline, handle_technical_anomaly
 ```
 
@@ -1136,7 +1347,7 @@ curl -sG "https://ai-news-search.futunn.com/news_search" \
 投资有风险，入市需谨慎。报告中的估值模型基于假设，实际股价受多种不可预测因素影响。
 
 📊 数据来源: 富途 OpenAPI (通过 OpenD 127.0.0.1:11111)
-📐 分析框架: 5+2+1+1分析法（v0.4.0）
+📐 分析框架: 6+2+1+1分析法（v0.6.0）
 📅 报告生成时间: {当前时间}
 ```
 
