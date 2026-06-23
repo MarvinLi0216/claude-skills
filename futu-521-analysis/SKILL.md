@@ -50,7 +50,11 @@ license: MIT
 ### 通用规则
 - 所有脚本用 `--json` 参数调用时，输出为 JSON 格式
 - 过滤 stderr 噪音：管道加 `2>&1 | grep -v "^\[" | grep -v "^2026"`
-- Windows 环境用 `python`（非 python3）
+- **Python 解释器选择**：Windows 的 App Execution Alias 会注册一个假的 `python3` 命令（exit code 49），因此必须用以下逻辑选择解释器：
+  ```bash
+  # 验证 python3 是否真正可用（而非 Windows Store 重定向器）
+  if python3 --version >/dev/null 2>&1; then PYTHON_BIN=python3; else PYTHON_BIN=python; fi
+  ```
 
 ### 各接口数据结构注意
 
@@ -120,7 +124,7 @@ license: MIT
 
 **数据获取：**
 ```bash
-PYTHON_BIN="$(command -v python3 || command -v python)"
+if python3 --version >/dev/null 2>&1; then PYTHON_BIN=python3; else PYTHON_BIN=python; fi
 SCRIPTS="$HOME/.claude/skills/futuapi/scripts/quote"
 
 # 公司概况（含行业描述）
@@ -1241,12 +1245,20 @@ print(json.dumps(output, ensure_ascii=False))
 ▸ 策略选择理由: {为什么选择这3个策略}
 ▸ 回测参数: 初始资金$100,000 | 佣金0.1% | 滑点0.1% | 无杠杆
 
-| 策略 | 总收益率 | 年化收益 | 最大回撤 | 夏普比率 | 交易次数 | 有效性 |
-|------|----------|----------|----------|----------|----------|--------|
-| Buy & Hold | XX% | XX% | XX% | X.XX | 1 | ✅ |
-| {策略1} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
-| {策略2} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
-| {策略3} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
+| 策略 | 买入规则 | 卖出规则 | 总收益率 | 年化收益 | 最大回撤 | 夏普比率 | 交易次数 | 有效性 |
+|------|----------|----------|----------|----------|----------|----------|----------|--------|
+| Buy & Hold | 首日买入持有 | 不卖出 | XX% | XX% | XX% | X.XX | 1 | ✅ |
+| {策略1} | {买入信号} | {卖出信号} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
+| {策略2} | {买入信号} | {卖出信号} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
+| {策略3} | {买入信号} | {卖出信号} | XX% | XX% | XX% | X.XX | XX | ✅/⚠️ |
+
+买入/卖出规则从 signal_reasons 字典中读取，各策略对应规则：
+- 双均线交叉(MA20/60): 买入=MA20上穿MA60 | 卖出=MA20下穿MA60
+- MACD信号: 买入=MACD金叉(DIF上穿DEA) | 卖出=MACD死叉(DIF下穿DEA)
+- 突破20日高点: 买入=收盘价突破20日最高价 | 卖出=收盘价跌破10日最低价
+- RSI超买超卖: 买入=RSI<30超卖 | 卖出=RSI>70超买
+- 布林带: 买入=价格触及下轨 | 卖出=价格触及上轨
+- 均线+放量: 买入=放量(>1.5倍均量)站上MA20 | 卖出=跌破MA20
 
 注: 有效性⚠️表示交易次数<6笔（不足3次完整买卖），统计意义不足，结论仅供参考。
 
