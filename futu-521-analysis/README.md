@@ -7,7 +7,7 @@ Claude Code 个股深度分析框架，输出完整研报：Executive Summary、
 ```bash
 mkdir -p ~/.claude/skills/futu-521-analysis
 curl -o ~/.claude/skills/futu-521-analysis/skill.md \
-  https://raw.githubusercontent.com/MarvinLi0216/claude-skills/main/futu-521-analysis/skill.md
+  https://raw.githubusercontent.com/MarvinLi0216/claude-skills/master/futu-521-analysis/skill.md
 ```
 
 安装完成后重启 Claude Code 即可使用。
