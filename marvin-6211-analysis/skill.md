@@ -1,5 +1,5 @@
 ---
-name: futu-521-analysis
+name: marvin-6211-analysis
 description: >-
   6+2+1+1个股深度分析。输出完整研报：Executive Summary、行业、商业模式、管理层、
   财务、估值、同业对比、投资逻辑、风险、技术面（含量化回测）、未来重大事件。
