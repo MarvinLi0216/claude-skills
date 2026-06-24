@@ -86,7 +86,7 @@ license: MIT
 
 ### Executive Summary（报告顶部）
 
-在完成所有9个模块分析后，在报告最顶部生成精简摘要：
+在完成所有模块分析后，在报告最顶部生成精简摘要：
 
 **输出格式：**
 ```
@@ -789,12 +789,58 @@ score = 2 → 部分修正（下方说明）
 
 ---
 
+### 消息面快照（近2周市场动态）
+
+**数据获取：**
+```bash
+# 近2周市场新闻（news_type=1为市场新闻/分析师观点）
+# begin_time = 当前时间戳 - 14天(1209600秒)
+BEGIN_TIME=$(($(date +%s) - 1209600))
+curl -sG "https://ai-news-search.futunn.com/news_search" \
+  --data-urlencode "keyword={COMPANY_NAME}" \
+  --data-urlencode "size=30" \
+  --data-urlencode "news_type=1" \
+  --data-urlencode "sort_type=2" \
+  --data-urlencode "begin_time=$BEGIN_TIME" \
+  --data-urlencode "language_id=0"
+```
+
+**分析要点：**
+- 仅使用近2周（14天内）的新闻，确保时效性
+- 提取影响估值的关键事件（产品发布、监管动态、分析师评级变更、重大合作/诉讼等）
+- 区分已被价格消化的旧闻 vs 仍在发酵的新动态
+- 忽略纯情绪性/重复性报道，聚焦有实质影响的信息
+- 与晨星报告内容对比：若晨星观点已过时（>1个月），以最新新闻为准
+
+**输出格式：**
+```
+## 消息面快照（近2周）
+
+▸ 关键动态:
+1. [{日期}] {事件描述} — 影响: {利好/利空/中性}，{是否已被价格消化}
+2. [{日期}] {事件描述} — 影响: ...
+3. ...
+
+▸ 市场情绪: {乐观/中性/悲观} — {依据，如分析师评级变动方向、机构买卖动向}
+▸ 与晨星报告差异: {若晨星观点已过时，指出哪些判断需更新}
+▸ 对估值的即时影响: {是否需要调整目标价的定性判断}
+▸ 数据来源: Futu News API (news_type=1, 近14天)
+```
+
+**重要约束：**
+- 消息面内容必须标注具体日期，让读者判断时效性
+- 超过2周的旧闻不得作为"近期动态"引用
+- 投资逻辑(模块七)和风险分析(模块八)中引用消息面时，优先使用本模块的最新信息，而非晨星报告中可能已过时的描述
+
+---
+
 ### 模块七：投资逻辑 (Bull Case)
 
-**数据来源：** 综合前六个模块的分析结果 + 晨星报告中的 bull_say
+**数据来源：** 综合前六个模块的分析结果 + 消息面快照 + 晨星报告中的 bull_say
 
 **分析要点：**
 - 提炼3-5个核心买入理由（基于前述分析的客观数据）
+- 结合消息面快照中的最新催化剂
 - 判断投资类型：高增长 / 爆发潜力 / 稳定分红 / 周期反转 / 价值低估
 - 建议投资组合定位：核心持仓 / 卫星配置 / 投机仓位
 
@@ -807,6 +853,7 @@ score = 2 → 部分修正（下方说明）
 2. {理由2 — 基于具体数据}
 3. {理由3 — 基于具体数据}
 
+▸ 近期催化剂（来自消息面快照）: {1-2个最重要的近期正面事件}
 ▸ 投资类型: {类型}
 ▸ 组合定位建议: {定位} — {理由}
 ▸ 晨星多头观点: {bull_say内容，如有}
@@ -830,7 +877,8 @@ score = 2 → 部分修正（下方说明）
 
 **分析要点：**
 - 从前述分析中提炼3-5个主要风险
-- 引用晨星报告中的 bear_say
+- 结合消息面快照中的最新负面事件或潜在风险
+- 引用晨星报告中的 bear_say（注意标注其时效性，若已过时需说明）
 - 卖空数据解读（仅美股）
 - 机构持仓结构及近期变动
 - 管理层潜在隐忧
@@ -1282,12 +1330,15 @@ print(json.dumps(output, ensure_ascii=False))
 # 回购记录
 "$PYTHON_BIN" "$SCRIPTS/get_corporate_actions_buybacks.py" {CODE} --json
 
-# 公司公告（仅官方公告，news_type=2）
+# 公司公告（仅官方公告，news_type=2，限近1个月）
+# begin_time = 当前时间戳 - 30天(2592000秒)
+BEGIN_TIME_30D=$(($(date +%s) - 2592000))
 curl -sG "https://ai-news-search.futunn.com/news_search" \
   --data-urlencode "keyword={COMPANY_NAME}" \
   --data-urlencode "size=20" \
   --data-urlencode "news_type=2" \
   --data-urlencode "sort_type=2" \
+  --data-urlencode "begin_time=$BEGIN_TIME_30D" \
   --data-urlencode "language_id=0"
 ```
 
@@ -1390,10 +1441,11 @@ curl -sG "https://ai-news-search.futunn.com/news_search" \
 - 组B: get_kline {CODE} 750日日K（回测+Beta用）、get_kline {BENCHMARK} 750日日K（Beta基准）
 - handle_technical_anomaly
 
-**批次7（事件）：**
-- Futu News API (公告)
+**批次7（消息面+事件，并行）：**
+- Futu News API (news_type=1, 近14天市场新闻) — 用于消息面快照
+- Futu News API (news_type=2, 近30天官方公告) — 用于未来事件推算
 
-获取完所有数据后，按模块顺序分析并输出报告。最后回到顶部生成 Executive Summary。
+获取完所有数据后，按模块顺序分析并输出报告。消息面快照位于模块六和模块七之间，确保投资逻辑和风险分析能引用最新动态。最后回到顶部生成 Executive Summary。
 
 ---
 
