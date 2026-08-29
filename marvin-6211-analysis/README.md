@@ -1,16 +1,25 @@
 # 6+2+1+1 个股深度分析 Skill
 
-Claude Code 个股深度分析框架，输出完整研报：Executive Summary、行业、商业模式、管理层、财务、估值、同业对比、投资逻辑、风险、技术面（含量化回测）、未来重大事件。
+Claude Code / Codex 个股深度分析框架，输出完整研报：Executive Summary、行业、商业模式、管理层、财务、估值、同业对比、投资逻辑、风险、技术面（含量化回测）、未来重大事件。
 
 ## 安装
 
+Claude Code：
+
 ```bash
 mkdir -p ~/.claude/skills/marvin-6211-analysis
-curl -o ~/.claude/skills/marvin-6211-analysis/skill.md \
-  https://raw.githubusercontent.com/MarvinLi0216/claude-skills/master/marvin-6211-analysis/skill.md
+curl -o ~/.claude/skills/marvin-6211-analysis/SKILL.md \
+  https://raw.githubusercontent.com/MarvinLi0216/claude-skills/master/marvin-6211-analysis/SKILL.md
 ```
 
-安装完成后重启 Claude Code 即可使用。
+Codex（推荐保留 Git 工作副本，便于迭代）：
+
+```bash
+git clone git@github.com:MarvinLi0216/claude-skills.git ~/Documents/Codex/claude-skills
+ln -s ~/Documents/Codex/claude-skills/marvin-6211-analysis ~/.codex/skills/marvin-6211-analysis
+```
+
+安装完成后，在下一轮 Claude Code / Codex 对话中即可使用。
 
 ## 前置依赖
 
