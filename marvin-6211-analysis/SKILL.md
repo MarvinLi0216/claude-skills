@@ -6,7 +6,7 @@ description: >-
   触发词："分析"、"深度分析"、"研报"、"估值"、"目标价"、"怎么样"、"能不能买"、
   "值不值得买"、"6+2"、"全面分析"。仅支持单只股票。
 metadata:
-  version: 0.6.0
+  version: 0.6.1
   author: MarvinLi
 license: MIT
 ---
@@ -22,9 +22,17 @@ license: MIT
 
 ## 前置条件
 
-- Futu OpenD 已启动并运行于 `127.0.0.1:11111`
-- Python 3 可用，已安装 `futu-api`, `pandas`, `numpy`
-- 如果 OpenD 未连接，提示用户执行 `/install-futu-opend`
+- Futu OpenD 或 Moomoo OpenD 已启动；默认监听 `127.0.0.1:11111`，若用户修改过配置则使用实际 host/port
+- Python 3 可用，并安装与 OpenD 品牌匹配的 SDK：Futu 使用 `futu-api`（`import futu`），Moomoo 使用 `moomoo-api`（`import moomoo`）；同时需要 `pandas`, `numpy`
+- `futuapi` 辅助脚本已安装；该脚本层与 OpenD 运行时是两个独立依赖，使用 Moomoo OpenD 不会自动提供这些脚本
+- 如果 OpenD 未连接，提示用户启动已安装的 Futu OpenD 或 Moomoo OpenD；未安装时引导用户使用所在地区的官方 OpenAPI 文档下载安装
+
+### OpenD 与 Python SDK 兼容规则
+
+- 两种 OpenD 使用相同的本地连接模型，默认 host/port 均为 `127.0.0.1:11111`
+- Futu SDK 示例使用 `from futu import *`；Moomoo SDK 示例使用 `from moomoo import *`
+- 调用 `futuapi` 辅助脚本前，先确认脚本导入的模块与当前 Python 环境一致；若脚本固定导入 `futu`，即使后端是 Moomoo OpenD，也需保留兼容的 `futu-api`，或先将脚本适配为 `moomoo`
+- 本 skill 只读取行情与财务数据，不执行真实交易；不要因为 OpenD 已登录而推断用户授权下单
 
 ---
 
@@ -1390,11 +1398,11 @@ curl -sG "https://ai-news-search.futunn.com/news_search" \
 ---
 
 ⚠️ **免责声明**
-本报告基于富途OpenAPI公开数据自动生成，仅供学习研究参考，不构成任何投资建议。
+本报告基于 Futu/Moomoo OpenAPI 公开数据自动生成，仅供学习研究参考，不构成任何投资建议。
 投资有风险，入市需谨慎。报告中的估值模型基于假设，实际股价受多种不可预测因素影响。
 
-📊 数据来源: 富途 OpenAPI (通过 OpenD 127.0.0.1:11111)
-📐 分析框架: 6+2+1+1分析法（v0.6.0）
+📊 数据来源: Futu/Moomoo OpenAPI (通过 OpenD，默认 127.0.0.1:11111)
+📐 分析框架: 6+2+1+1分析法（v0.6.1）
 📅 报告生成时间: {当前时间}
 ```
 
@@ -1453,7 +1461,8 @@ curl -sG "https://ai-news-search.futunn.com/news_search" \
 
 | 错误场景 | 处理方式 |
 |----------|----------|
-| OpenD 未连接 | 提示: "OpenD未运行，请先启动 OpenD 或执行 /install-futu-opend" |
+| OpenD 未连接 | 提示启动 Futu OpenD 或 Moomoo OpenD，并核对实际 host/port；未安装时引导至对应官方 OpenAPI 文档 |
+| Python SDK 不匹配 | Futu 环境检查 `futu-api`/`import futu`；Moomoo 环境检查 `moomoo-api`/`import moomoo`；辅助脚本固定导入另一模块时先适配或安装兼容SDK |
 | 某个API调用失败 | 该模块标注 "⚠️ 数据暂不可用"，继续其余模块 |
 | FCF为负（可正常化） | 使用正常化FCF计算DCF，标注正常化原因 |
 | FCF为负（不可正常化） | DCF标注"不适用（经营现金流为负）"，间接估值用PS法替代 |

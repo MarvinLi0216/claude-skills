@@ -7,43 +7,61 @@ Claude Code / Codex 个股深度分析框架，输出完整研报：Executive Su
 Claude Code：
 
 ```bash
-mkdir -p ~/.claude/skills/marvin-6211-analysis
-curl -o ~/.claude/skills/marvin-6211-analysis/SKILL.md \
+/bin/mkdir -p ~/.claude/skills/marvin-6211-analysis
+/usr/bin/curl -o ~/.claude/skills/marvin-6211-analysis/SKILL.md \
   https://raw.githubusercontent.com/MarvinLi0216/claude-skills/master/marvin-6211-analysis/SKILL.md
 ```
 
 Codex（推荐保留 Git 工作副本，便于迭代）：
 
 ```bash
-git clone git@github.com:MarvinLi0216/claude-skills.git ~/Documents/Codex/claude-skills
-ln -s ~/Documents/Codex/claude-skills/marvin-6211-analysis ~/.codex/skills/marvin-6211-analysis
+/usr/bin/git clone git@github.com:MarvinLi0216/claude-skills.git ~/Documents/Codex/claude-skills
+/bin/ln -s ~/Documents/Codex/claude-skills/marvin-6211-analysis ~/.codex/skills/marvin-6211-analysis
 ```
 
 安装完成后，在下一轮 Claude Code / Codex 对话中即可使用。
 
 ## 前置依赖
 
-### 1. Futu OpenD（必需）
+### 1. Futu OpenD 或 Moomoo OpenD（必需，二选一）
 
-Skill 通过 Futu OpenD 获取实时行情和财务数据。
+Skill 通过 OpenD 获取实时行情和财务数据，支持：
 
-- 下载地址：https://www.futunn.com/download/openAPI
-- 安装后启动 OpenD，默认监听 `127.0.0.1:11111`
-- 需要富途账号（免费注册即可获取基础行情权限）
+- Futu OpenD：https://www.futunn.com/download/openAPI
+- Moomoo OpenD：https://openapi.moomoo.com/
+- 两者默认监听 `127.0.0.1:11111`；如修改过配置，请使用实际 host/port
+- 使用对应平台账号登录，实际行情权限取决于账号、地区及订阅
 
 ### 2. Python 环境
 
+Futu OpenD：
+
 ```bash
-pip install futu-api pandas numpy
+/usr/bin/python3 -m pip install futu-api pandas numpy
 ```
+
+Moomoo OpenD：
+
+```bash
+/usr/bin/python3 -m pip install moomoo-api pandas numpy
+```
+
+此外还需要本 Skill 引用的 `futuapi` 辅助脚本。Moomoo OpenD 只能替代 OpenD 运行时，不会自动提供这些脚本；辅助脚本导入的 Python 模块必须与当前 SDK 兼容。
 
 最低版本要求：Python 3.8+
 
 ### 3. 验证安装
 
+Futu SDK：
+
 ```bash
-# 确认 OpenD 正在运行
-python -c "from futu import OpenQuoteContext; ctx = OpenQuoteContext(); print('OK'); ctx.close()"
+/usr/bin/python3 -c "from futu import OpenQuoteContext; ctx = OpenQuoteContext(host='127.0.0.1', port=11111); print('OK'); ctx.close()"
+```
+
+Moomoo SDK：
+
+```bash
+/usr/bin/python3 -c "from moomoo import OpenQuoteContext; ctx = OpenQuoteContext(host='127.0.0.1', port=11111); print('OK'); ctx.close()"
 ```
 
 输出 `OK` 即表示连接正常。
